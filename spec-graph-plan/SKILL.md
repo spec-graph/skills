@@ -1,126 +1,46 @@
----
-name: spec-graph-plan
-description: Start the spec-graph planning flow. Transforms a user intent into a structured plan (capabilities, dependencies, complexity, risks), presents it to the user for confirmation. After confirmation, proceed to the spec-graph-dispatch skill for the 8-stage workflow. Use when the user wants to start a new development task with spec-graph.
-license: MIT
-compatibility: Requires spec-graph CLI (v3+) installed globally or locally.
-metadata:
-  author: spec-graph
-  version: "2.0"
----
+# spec-graph-plan
 
-Start a planning flow with spec-graph.
+## Decision table
 
-spec-graph is a declaration engine. It manages the 8-stage FSM, generates dispatch manifests for sub-agents, and evaluates outputs through strict quality gates. It does NOT write code or documents, and does NOT invoke agents directly — all execution is delegated to external coordinators.
+Check state with `spec-graph status --json`. Then run exactly one command:
 
-This skill walks you through the **planning phase** — the ONLY phase where human confirmation is mandatory. After plan confirmation, proceed to the `spec-graph-dispatch` skill to kick off the 8-stage workflow.
-
----
-
-## Orchestrates
-
-| CLI Command | Purpose |
-|-------------|---------|
-| `spec-graph plan "<intent>" --json` | Transform intent into structured plan |
-| `spec-graph intervene --session <id>` | Modify or force-advance if needed |
-
-Backed by core modules: `planning`, `automator`
-
----
-
-## The Stance
-
-- **Plan first, act second.** Never jump into implementation without a confirmed plan.
-- **Intent → structured plan → confirmation → auto execution.** This is the flow.
-- **Scope discipline.** The plan defines what's in and what's out. Later stages respect this scope.
-- **Risk-aware.** Surface complexity and risks early, not during implementation.
-
----
-
-## When to use this skill
-
-- User describes a feature, fix, refactor, or any development task that needs planning
-- User explicitly asks to "plan", "spec-graph plan", or "use spec-graph"
-- You want to kick off spec-graph's automatic workflow
-
----
-
-## Steps
-
-### 1. Clarify the intent
-
-If the user's intent is ambiguous, ask one clarifying question. Do not over-interview — spec-graph's planner can infer scope from a reasonably clear intent.
-
-If the intent is clear (e.g., "Add JWT authentication", "Refactor the user module"), skip to step 2.
-
-### 2. Invoke the planner
-
-**Default mode (LLM-based):**
-
-```bash
-spec-graph plan "<intent>" --json
+```
+STATE              STAGE              → COMMAND
+──────────────────────────────────────────────────────────────
+null               -                  → spec-graph start "<intent>"
+paused             any                → ask user to confirm plan
+running            specify..integrate → spec-graph dispatch --json
+running            (has diagnosis)    → fix artifact → spec-graph submit --stage
+completed          integrate          → Done. All 8 stages passed.
 ```
 
-This generates a **planning manifest** — a structured prompt for a planning agent. The manifest contains:
-- `prompt` — the full prompt to send to the planning agent
-- `schema` — JSON schema the agent's output must conform to
-- `agent_config` — agent id (planner) and model tier (capable)
-- `next_step` — the confirm command to run after validation
+## After dispatch
 
-**Workflow:**
-1. Run `spec-graph plan "<intent>" --json` → get manifest
-2. Dispatch planning agent with `manifest.prompt`
-3. Agent returns JSON conforming to `manifest.schema`
-4. Validate JSON: `validatePlanOutput()` checks schema + semantics
-5. On success: `spec-graph confirm <session-id>` to create session
-6. On failure: retry with error feedback, or use `--fallback`
+The hook injects a system-reminder. Read it. It tells you:
+- Which Agent to dispatch (id + model_tier)
+- What to do: `Agent(description="...", prompt=actions[0].prompt)`
+- How to submit: `spec-graph submit --stage`
 
-**Fallback mode (offline, keyword matching):**
+## After sub-agent returns
 
-```bash
-spec-graph plan "<intent>" --fallback --json
+Parse the `status-report` block from sub-agent output:
+```
+DONE               → spec-graph submit --stage
+DONE_WITH_CONCERNS → spec-graph submit --stage
+NEEDS_CONTEXT      → report missing context to user
+BLOCKED            → report blocker to user
 ```
 
-Uses local keyword matching (no LLM). Output is a direct plan:
-- `session_id` — the new session identifier
-- `capabilities` — list of capabilities with descriptions
-- `order` — dependency order
-- `complexity` — low / medium / high
-- `risks` — identified risks
-- `openQuestions` — questions the planner had but couldn't resolve
+## After submit
 
-Use `--fallback` when no LLM is available or for quick offline planning.
+The hook injects a reminder: "advanced to X. Re-run dispatch."
 
-### 3. Present the plan to the user
+Run: `spec-graph dispatch --json`
 
-Format the plan clearly. Highlight:
-- What will be built (capabilities)
-- In what order (dependencies)
-- Complexity estimate
-- Risks
-- Open questions (if any)
+## The cycle
 
-Ask the user to confirm, modify, or reject.
+```
+status → dispatch → hook → Agent tool → status-report → submit → hook → dispatch → ...
+```
 
-### 4. Handle the response
-
-- **Confirm**: proceed to the `spec-graph-dispatch` skill, passing the `session_id`
-- **Modify**: capture the user's modifications, re-run `spec-graph plan` with the updated intent or use `spec-graph intervene` to adjust the plan, then re-present
-- **Reject**: abort. Do not proceed.
-
----
-
-## What happens next
-
-After plan confirmation, the user (or you) should switch to the `spec-graph-dispatch` skill to kick off the dispatch workflow. From that point on, spec-graph drives the process through all 8 stages: specify → design → tasks → implement → review → test → accept → integrate.
-
-The dispatch workflow is: `dispatch --json` → hook → sub-agent → `submit`. This loop repeats until state = "completed".
-
-You will be invoked at gate failures that the automator cannot auto-recover from, and at the final acceptance stage.
-
----
-
-## Edge cases
-
-- **No intent provided**: use AskUserQuestion to ask what the user wants to build
-- **Plan command fails**: check that spec-graph is installed (`spec-graph --version`). If not installed, guide the user to install it
-- **Multiple active sessions**: the planner will refuse to start a new session if one is already active. Ask the user whether to resume or abort the existing session
+Stop when `status → state = "completed"`.
