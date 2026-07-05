@@ -5,7 +5,7 @@ SKILL.md collection for AI agents to orchestrate the spec-graph CLI.
 Each skill is a `SKILL.md` file that Claude Code (or similar AI agents) reads
 to understand how to use spec-graph for a specific task.
 
-## Skills (7)
+## Skills (9)
 
 ### spec-graph-init
 
@@ -77,12 +77,32 @@ Manual intervention in the workflow.
 
 Actions: `force-advance`, `rollback`, `resume`, `modify-plan`.
 
+### spec-graph-task
+
+Manage tasks within a session.
+
+```
+/spec-graph-task [list|start|complete] <task-id>
+```
+
+Start tasks, mark them complete, list status. Auto-updates tasks.md, state.yaml, and sessions.csv.
+
+### spec-graph-run
+
+Run or continue a session.
+
+```
+/spec-graph-run [--session <id>] [--auto-next]
+```
+
+Auto-selects the latest running session. Shows what to resume or what's next. Use `--auto-next` to automatically start the next runnable task.
+
 ## Architecture
 
 Skills are the **orchestration layer** — they tell AI agents how to compose CLI commands into workflows. One skill covers N CLI commands. Not every CLI command needs a skill.
 
 ```
-Skills  (7, orchestration)  →  CLI  (20+, atomic ops)  →  Core  (9 modules, API)
+Skills  (9, orchestration)  →  CLI  (20+, atomic ops)  →  Core  (9 modules, API)
 ```
 
 Each skill documents:

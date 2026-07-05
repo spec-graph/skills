@@ -10,7 +10,9 @@
     "spec-graph-status/",
     "spec-graph-intervene/",
     "spec-graph-diagnose/",
-    "spec-graph-validate/"
+    "spec-graph-validate/",
+    "spec-graph-task/",
+    "spec-graph-run/"
   ],
   "scripts": {
     "install-skills": "node scripts/install-skills.js"
